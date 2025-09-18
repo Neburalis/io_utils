@@ -87,4 +87,7 @@ int is_user_want_continue(const char * const ask_message);
 
 ssize_t file_byte_size(const char * const filename);
 
+// func is allocate buffer, don't forgot free return value
+char * read_file_to_buf(const char * const filename, size_t * const buf_len);
+
 #endif // IO_UTILS_H

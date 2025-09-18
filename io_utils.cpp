@@ -1,11 +1,12 @@
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <math.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-#include <fcntl.h>
-#include <sys/stat.h>
+#include <unistd.h>
 
 #include "io_utils.h"
 
@@ -203,4 +204,49 @@ ssize_t file_byte_size(const char * const filename) {
     }
 
     return (ssize_t) file_info.st_size;
+}
+
+// func is allocate buffer, don't forgot free return value
+char * read_file_to_buf(const char * const filename, size_t * const buf_len) {
+    assert(filename != NULL && "U must provide valid filename");
+    assert(buf_len != NULL  && "U must provide valid ptr to buf_len");
+
+    int fd = open(filename, O_RDONLY);
+
+    if (fd == -1) {
+        errno = ENOENT; // open не выставляет errno
+        ERROR_MSG("Не удалось получить информацию о файле %s\n", filename);
+        perror("");
+        return NULL;
+    }
+
+    ssize_t byte_len = file_byte_size(filename);
+    // signed чтобы не потерять отрицательное значение в случае ошибки
+    if (byte_len <= 0) {
+        // Сообщение об ошибке уже выдала file_byte_size
+        return NULL;
+    }
+
+    // Добавляем +1 чтобы при вводе поместился '\0'
+    char * buff = (char *) calloc((size_t) byte_len + 1, sizeof(char));
+    // TODO don't alloc in func
+    *buf_len = (size_t) byte_len + 1;
+
+    if (buff == NULL) {
+        close(fd);
+        perror(""); // errno placed by calloc
+        return NULL;
+    }
+
+    if (read(fd, buff, (size_t) byte_len) == -1) { // TODO: don't use too more sys calls
+        close(fd);
+        ERROR_MSG("Не прочитать из файла %s\n", filename);
+        return NULL;
+    }
+
+    buff[byte_len] = '\0';
+
+    close(fd);
+
+    return buff;
 }
