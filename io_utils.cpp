@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 #include "io_utils.h"
 
@@ -136,10 +138,10 @@ int is_stdin_buffer_clean() {
     return 1;
 }
 
-double safe_get_double(const char * const var_name) {
-    assert(var_name != NULL && "You must pass variable name");
+double safe_get_double(const char * const prompt) {
+    assert(prompt != NULL && "You must pass variable name");
 
-    if (var_name == NULL) {
+    if (prompt == NULL) {
         errno = EINVAL;
         return -1;
     }
@@ -147,7 +149,7 @@ double safe_get_double(const char * const var_name) {
     int scanf_status = 0;
     double var = NAN;
     for (;;) {
-        printf("%s", var_name); // TODO: rename
+        printf("%s", prompt);
         scanf_status = scanf("%lg", &var);
         if (scanf_status && !isinf(var) && isfinite(var) && is_stdin_buffer_clean())
             return var;
@@ -188,4 +190,17 @@ int is_user_want_continue(const char * const ask_message) {
     if (choice == 'Y' || choice == 'y')
         return 1;
     return 0;
+}
+
+ssize_t file_byte_size(const char * const filename) {
+    assert(filename != NULL && "U must provide valid filename");
+
+    struct stat file_info = {};
+
+    if (stat(filename, &file_info) == -1) {
+        ERROR_MSG("Не удалось получить информацию о файле %s\n", filename);
+        return -1;
+    }
+
+    return (ssize_t) file_info.st_size;
 }

@@ -42,6 +42,7 @@ int msleep(long msec);
 void spinner(string_t str, uint32_t time, uint32_t period);
 
 size_t lines_in_file(FILE *fp);
+
 /**
   @brief Функция отчистки буфера ввода
   Считывает данные из потока ввода до \\n (\n также будет считан)
@@ -79,7 +80,11 @@ int clear_stdin_buffer();
   @return int 0 если буфер содержит что-то помимо пустоты
  */
 int is_stdin_buffer_clean();
+
 double safe_get_double(const char * const var_name);
+
 int is_user_want_continue(const char * const ask_message);
+
+ssize_t file_byte_size(const char * const filename);
 
 #endif // IO_UTILS_H
