@@ -44,16 +44,14 @@
             __FILE__, __LINE__, __PRETTY_FUNCTION__, ##__VA_ARGS__); perror("");
 
 
-#define string_t const char * const
-
-void show_gif(string_t filename);
+void show_gif(const char * const filename);
 
 void show_random_gif(size_t n, const char ** filenames);
 
 /* msleep(): Sleep for the requested number of milliseconds. */
 int msleep(long msec);
 
-void spinner(string_t str, uint32_t time, uint32_t period);
+void spinner(const char * const str, uint32_t time, uint32_t period);
 
 size_t lines_in_file(FILE *fp);
 

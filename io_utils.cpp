@@ -10,7 +10,7 @@
 
 #include "io_utils.h"
 
-void show_gif(string_t filename) {
+void show_gif(const char * const filename) {
     assert(filename != NULL && "U must pass filename");
 
     if (filename == NULL) {
@@ -24,7 +24,6 @@ void show_gif(string_t filename) {
     snprintf(cmd, sizeof(cmd), "qlmanage -p cat_gifs/%s.gif > /dev/null 2>&1", filename);
     system(cmd);
 #endif // __APPLE__
-
     return;
 }
 
@@ -41,17 +40,10 @@ void show_random_gif(size_t n, const char ** filenames) {
         return;
     }
 
-    if (n == 0) {
-        errno = EINVAL;
-        return;
-    }
-    if (filenames == NULL) {
-        errno = EINVAL;
-        return;
-    }
-    size_t index = ((size_t) random() ) % n;
+#ifdef __APPLE__ || __LINUX__
+    size_t index = arc4random_uniform((uint32_t)n);
     show_gif(filenames[index]);
-
+#endif // __APPLE__
     return;
 }
 
@@ -77,7 +69,7 @@ int msleep(long msec) {
     return res;
 }
 
-void spinner(string_t str, uint32_t time, uint32_t period) {
+void spinner(const char * const str, uint32_t time, uint32_t period) {
     assert(str != NULL);
 
     if (str == NULL) {
@@ -124,14 +116,15 @@ size_t lines_in_file(FILE * const fp) {
 }
 
 int clear_stdin_buffer() {
-    while (getchar() != '\n')
+    int c = 0;
+    while ((c = getchar()) != '\n' && c != EOF)
         continue;
     return 1;
 }
 
 int is_stdin_buffer_clean() {
     int c = 0;
-    while ((c = getchar()) != '\n') {
+    while ((c = getchar()) != '\n' && c != EOF) {
         if (c == ' ' || c == '\t')
             continue;
         return 0;
@@ -152,6 +145,10 @@ double safe_get_double(const char * const prompt) {
     for (;;) {
         printf("%s", prompt);
         scanf_status = scanf("%lg", &var);
+        if (scanf_status == EOF) {
+            fprintf(stderr, "Ввод завершен. Завершение программы.\n");
+            return NAN;
+        }
         if (scanf_status && !isinf(var) && isfinite(var) && is_stdin_buffer_clean())
             return var;
         clear_stdin_buffer();
@@ -196,6 +193,11 @@ int is_user_want_continue(const char * const ask_message) {
 ssize_t file_byte_size(const char * const filename) {
     assert(filename != NULL && "U must provide valid filename");
 
+    if (filename == NULL) {
+        errno = EINVAL;
+        return;
+    }
+
     struct stat file_info = {};
 
     if (stat(filename, &file_info) == -1) {
@@ -210,6 +212,15 @@ ssize_t file_byte_size(const char * const filename) {
 char * read_file_to_buf(const char * const filename, size_t * const buf_len) {
     assert(filename != NULL && "U must provide valid filename");
     assert(buf_len != NULL  && "U must provide valid ptr to buf_len");
+
+    if (filename == NULL) {
+        errno = EINVAL;
+        return;
+    }
+    if (buf_len == NULL) {
+        errno = EINVAL;
+        return;
+    }
 
     int fd = open(filename, O_RDONLY);
 
@@ -238,15 +249,20 @@ char * read_file_to_buf(const char * const filename, size_t * const buf_len) {
         return NULL;
     }
 
-    if (read(fd, buff, (size_t) byte_len) == -1) { // TODO: don't use too more sys calls
-        close(fd);
-        ERROR_MSG("Не прочитать из файла %s\n", filename);
-        return NULL;
+    size_t total_read = 0;
+    while (total_read < byte_len) {
+        size_t read_code = read(fd, buff + total_read, byte_len - total_read);
+        if (read_code == -1) {
+            if (errno = EINTR) continue;
+            close(fd);
+            free(buff);
+            // read сам выставит errno
+            return NULL;
+        }
+        if (read_code == 0) break; // Встретился EOF до того как дошли до byte_len
+        total_read += read_code;
     }
-
     buff[byte_len] = '\0';
-
     close(fd);
-
     return buff;
 }
