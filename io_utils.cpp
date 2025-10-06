@@ -195,7 +195,7 @@ ssize_t file_byte_size(const char * const filename) {
 
     if (filename == NULL) {
         errno = EINVAL;
-        return;
+        return -2;
     }
 
     struct stat file_info = {};
@@ -215,19 +215,16 @@ char * read_file_to_buf(const char * const filename, size_t * const buf_len) {
 
     if (filename == NULL) {
         errno = EINVAL;
-        return;
+        return NULL;
     }
     if (buf_len == NULL) {
         errno = EINVAL;
-        return;
+        return NULL;
     }
 
-    int fd = open(filename, O_RDONLY);
-
-    if (fd == -1) {
-        errno = ENOENT; // open не выставляет errno
-        ERROR_MSG("Не удалось получить информацию о файле %s\n", filename);
-        perror("");
+    FILE * fp = fopen(filename, "rb");
+    if (!fp) {
+        // errno выставит fopen
         return NULL;
     }
 
@@ -239,30 +236,24 @@ char * read_file_to_buf(const char * const filename, size_t * const buf_len) {
     }
 
     // Добавляем +1 чтобы при вводе поместился '\0'
-    char * buff = (char *) calloc((size_t) byte_len + 1, sizeof(char));
-    // TODO don't alloc in func
+    char * buf = (char *) calloc((size_t) byte_len + 1, sizeof(char));
+    // NOTE don't alloc in func
     *buf_len = (size_t) byte_len + 1;
 
-    if (buff == NULL) {
-        close(fd);
-        perror(""); // errno placed by calloc
+    if (buf == NULL) {
+        fclose(fp);
         return NULL;
     }
 
-    size_t total_read = 0;
-    while (total_read < byte_len) {
-        size_t read_code = read(fd, buff + total_read, byte_len - total_read);
-        if (read_code == -1) {
-            if (errno = EINTR) continue;
-            close(fd);
-            free(buff);
-            // read сам выставит errno
-            return NULL;
-        }
-        if (read_code == 0) break; // Встретился EOF до того как дошли до byte_len
-        total_read += read_code;
+    size_t nread = fread(buf, 1, (size_t) byte_len, fp);
+    int read_error = ferror(fp);
+    fclose(fp);
+
+    if (read_error) {
+        free(buf);
+        return NULL;
     }
-    buff[byte_len] = '\0';
-    close(fd);
-    return buff;
+
+    buf[byte_len] = '\0';
+    return buf;
 }
