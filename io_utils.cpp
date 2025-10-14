@@ -7,6 +7,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <limits.h>
 
 #include "io_utils.h"
 
@@ -40,7 +41,7 @@ void show_random_gif(size_t n, const char ** filenames) {
         return;
     }
 
-#ifdef __APPLE__ || __LINUX__
+#ifdef __APPLE__ // show_gif работает только на MACOS
     size_t index = arc4random_uniform((uint32_t)n);
     show_gif(filenames[index]);
 #endif // __APPLE__
@@ -208,10 +209,9 @@ ssize_t file_byte_size(const char * const filename) {
     return (ssize_t) file_info.st_size;
 }
 
-// func is allocate buffer, don't forgot free return value
 char * read_file_to_buf(const char * const filename, size_t * const buf_len) {
-    assert(filename != NULL && "U must provide valid filename");
-    assert(buf_len != NULL  && "U must provide valid ptr to buf_len");
+    assert(filename != NULL && "You must provide a valid filename");
+    assert(buf_len != NULL  && "You must provide a valid pointer to buf_len");
 
     if (filename == NULL) {
         errno = EINVAL;
@@ -224,36 +224,115 @@ char * read_file_to_buf(const char * const filename, size_t * const buf_len) {
 
     FILE * fp = fopen(filename, "rb");
     if (!fp) {
-        // errno выставит fopen
+        // errno уже установлен fopen()
         return NULL;
     }
 
     ssize_t byte_len = file_byte_size(filename);
-    // signed чтобы не потерять отрицательное значение в случае ошибки
-    if (byte_len <= 0) {
-        // Сообщение об ошибке уже выдала file_byte_size
+    if (byte_len < 0) {
+        // Ошибка уже установлена в file_byte_size()
+        fclose(fp);
+        return NULL;
+    }
+    if (byte_len == 0) {
+        // Пустой файл — допустимый случай
+        fclose(fp);
+    }
+
+    // Проверка на переполнение: byte_len + 1 не должно превышать SIZE_MAX
+    if ((size_t)byte_len > SIZE_MAX - 1) {
+        fclose(fp);
+        errno = ENOMEM; // или EOVERFLOW, но ENOMEM уместнее при аллокации
         return NULL;
     }
 
-    // Добавляем +1 чтобы при вводе поместился '\0'
-    char * buf = (char *) calloc((size_t) byte_len + 1, sizeof(char));
-    // NOTE don't alloc in func
-    *buf_len = (size_t) byte_len + 1;
+    size_t alloc_size = (size_t)byte_len + 1;
 
+    char * buf = (char *) calloc(alloc_size, sizeof(char));
     if (buf == NULL) {
         fclose(fp);
         return NULL;
     }
 
-    size_t nread = fread(buf, 1, (size_t) byte_len, fp);
-    int read_error = ferror(fp);
+    if (byte_len > 0) {
+        fread(buf, 1, (size_t)byte_len, fp);
+        if (ferror(fp)) {
+            free(buf);
+            fclose(fp);
+            return NULL;
+        }
+    }
+    // Для пустого файла nread остаётся 0 — это нормально
+
     fclose(fp);
 
-    if (read_error) {
-        free(buf);
+    // Убеждаемся, что буфер завершён нулём (calloc уже обнулил, но на всякий случай)
+    buf[byte_len] = '\0';
+
+    // Возвращаем **полный размер выделенного буфера**, включая '\0'
+    *buf_len = alloc_size;
+
+    return buf;
+}
+
+size_t * read_file_to_size_t_buf(const char *filename, size_t *count) {
+    // Проверки аргументов
+    if (filename == NULL || count == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+    *count = 0;
+
+    // Открываем файл в бинарном режиме
+    FILE *fp = fopen(filename, "rb");
+    if (!fp) {
+        return NULL; // errno установлен fopen()
+    }
+
+    // Получаем размер файла
+    struct stat st;
+    if (fstat(fileno(fp), &st) != 0) {
+        fclose(fp);
+        return NULL; // errno установлен fstat()
+    }
+
+    off_t file_size = st.st_size;
+
+    // Проверка: файл должен быть кратен sizeof(size_t)
+    if (file_size % sizeof(size_t) != 0) {
+        fclose(fp);
+        errno = EINVAL; // повреждённый или не тот формат
         return NULL;
     }
 
-    buf[byte_len] = '\0';
+    // Проверка: не превышает ли размер SSIZE_MAX (защита от переполнения при приведении)
+    if (file_size > SSIZE_MAX) {
+        fclose(fp);
+        errno = EFBIG;
+        return NULL;
+    }
+
+    size_t total_bytes = (size_t)file_size;
+    size_t n = total_bytes / sizeof(size_t);
+
+    // Выделяем память (malloc, не calloc — данные бинарные, обнуление не нужно)
+    size_t *buf = (size_t *)malloc(total_bytes);
+    if (!buf) {
+        fclose(fp);
+        return NULL; // errno = ENOMEM (установлен malloc)
+    }
+
+    // Читаем весь файл за один раз
+    size_t nread = fread(buf, 1, total_bytes, fp);
+    if (nread != total_bytes) {
+        int saved_errno = ferror(fp) ? errno : EIO;
+        free(buf);
+        fclose(fp);
+        errno = saved_errno;
+        return NULL;
+    }
+
+    fclose(fp);
+    *count = n;
     return buf;
 }
