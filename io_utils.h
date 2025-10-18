@@ -5,6 +5,29 @@
 #include <stdlib.h>
 #include "ansi.h"
 
+// Открывает новую "альтернативную" сессию терминала (альтернативный буфер экрана)
+// После этого весь вывод будет идти в отдельный буфер, не затрагивая основной
+#define TERMINAL_ENTER_ALT_SCREEN() \
+    do { \
+        fputs("\033[?1049h", stdout); \
+        fflush(stdout); \
+    } while (0)
+
+// Возвращает терминал в исходную сессию (основной буфер экрана)
+// При этом восстанавливается содержимое терминала, каким оно было до ENTER_ALT_SCREEN
+#define TERMINAL_EXIT_ALT_SCREEN() \
+    do { \
+        fputs("\033[?1049l", stdout); \
+        fflush(stdout); \
+    } while (0)
+
+// Очищает текущий экран терминала (очищает всё содержимое и перемещает курсор в левый верхний угол)
+#define TERMINAL_CLEAR_SCREEN() \
+    do { \
+        fputs("\033[2J\033[H", stdout); \
+        fflush(stdout); \
+    } while (0)
+
 /**
  * @brief Макрос с ASCII-артом для отображения сообщения об ошибке времени выполнения.
  *
@@ -81,8 +104,8 @@
  */
 #define ERROR_MSG(format, ...)                                                  \
     fprintf(stderr,                                                             \
-            "In " GREEN("%s:%d") ", " YELLOW("%s") ".\n" format,                \
-            __FILE__, __LINE__, __PRETTY_FUNCTION__, ##__VA_ARGS__); perror("");
+            "MEOW\nIn " GREEN("%s:%d") ", " YELLOW("%s") ".\n" format,          \
+            __FILE__, __LINE__, __PRETTY_FUNCTION__, ##__VA_ARGS__); perror(""); fflush(stderr);
 
 /**
  * @brief Показывает GIF-файл с использованием системного просмотрщика.
@@ -125,6 +148,19 @@ void show_random_gif(size_t n, const char ** filenames);
  * @note При msec < 0 устанавливает errno = EINVAL и возвращает -1.
  */
 int msleep(long msec);
+
+/**
+ * @brief Приостанавливает выполнение программы на заданное количество наносекунд.
+ *
+ * Использует nanosleep() для точного ожидания. Устойчива к прерываниям сигналами
+ * (EINTR) - продолжает ожидание до полного завершения времени.
+ *
+ * @param[in] nsec Количество наносекунд для ожидания. Должно быть >= 0.
+ *
+ * @return 0 при успешном выполнении, -1 при ошибке.
+ * @note При nsec < 0 устанавливает errno = EINVAL и возвращает -1.
+ */
+int nsleep(size_t nsec);
 
 /**
  * @brief Показывает анимированный спиннер с заданным текстом.

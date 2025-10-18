@@ -70,6 +70,21 @@ int msleep(long msec) {
     return res;
 }
 
+int nsleep(size_t nsec) {
+    struct timespec ts = {};
+    int res = 0;
+
+    ts.tv_sec = nsec / 1000000000ULL;              // miliseconds in one second
+    ts.tv_nsec = (nsec % 1000000000ULL);           // nanoseconds io one second
+    //                       ^----------------- remove int part seconds in ms
+
+    do {
+        res = nanosleep(&ts, &ts);
+    } while (res && errno == EINTR);
+
+    return res;
+}
+
 void spinner(const char * const str, uint32_t time, uint32_t period) {
     assert(str != NULL);
 
