@@ -334,4 +334,6 @@ char * read_file_to_buf(const char * const filename, size_t * const buf_len);
  */
 size_t * read_file_to_size_t_buf(const char *filename, size_t *count);
 
+int create_folder_if_not_exists(const char *dir_path);
+
 #endif // IO_UTILS_H

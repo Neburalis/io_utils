@@ -311,10 +311,10 @@ size_t * read_file_to_size_t_buf(const char *filename, size_t *count) {
         return NULL; // errno установлен fstat()
     }
 
-    off_t file_size = st.st_size;
+    long long file_size = st.st_size;
 
     // Проверка: файл должен быть кратен sizeof(size_t)
-    if (file_size % sizeof(size_t) != 0) {
+    if ((unsigned long long)file_size % sizeof(size_t) != 0) {
         fclose(fp);
         errno = EINVAL; // повреждённый или не тот формат
         return NULL;
@@ -350,4 +350,26 @@ size_t * read_file_to_size_t_buf(const char *filename, size_t *count) {
     fclose(fp);
     *count = n;
     return buf;
+}
+
+int create_folder_if_not_exists(const char *dir_path) {
+    assert(dir_path != NULL);
+
+    if (dir_path == NULL) {
+        errno = EINVAL;
+        return 0;
+    }
+
+    if (mkdir(dir_path, S_IRWXU | S_IRWXG | S_IRWXO) == -1) {
+        if (errno == EEXIST) {
+            // Directory already exists.
+            return 0;
+        } else {
+            perror("Error creating directory");
+            return 1; // Indicate an error
+        }
+    } else {
+        // Directory created successfully.
+        return 0;
+    }
 }
