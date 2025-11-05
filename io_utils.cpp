@@ -8,6 +8,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <limits.h>
+#include <stdint.h>
 
 #include "io_utils.h"
 

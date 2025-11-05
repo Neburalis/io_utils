@@ -3,6 +3,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+
 #include "ansi.h"
 
 // Открывает новую "альтернативную" сессию терминала (альтернативный буфер экрана)
