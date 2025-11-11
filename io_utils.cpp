@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <stdint.h>
+#include <stdarg.h>
 
 #include "io_utils.h"
 
@@ -180,18 +181,21 @@ double safe_get_double(const char * const prompt) {
     }
 }
 
-int is_user_want_continue(const char * const ask_message) {
-    assert(ask_message != NULL && "You must pass message for user");
+int is_user_want_continue(const char * const fmt, ...) {
+    assert(fmt != NULL && "You must pass message for user");
 
-    if (ask_message == NULL) {
+    if (fmt == NULL) {
         errno = EINVAL;
         return -1;
     }
 
     int choice = 0;
 
-    printf("%s", ask_message);
+    va_list ap;
+    va_start(ap, fmt);
+    vprintf(fmt, ap);
     fflush(stdout);
+    va_end(ap);
 
     do {
         choice = getchar();
@@ -201,6 +205,8 @@ int is_user_want_continue(const char * const ask_message) {
            choice != 'n' &&
            choice != 'N' &&
            choice != '\n');
+
+    if (choice != '\n') clear_stdin_buffer();
 
     if (choice == 'Y' || choice == 'y')
         return 1;

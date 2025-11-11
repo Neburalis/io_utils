@@ -267,7 +267,7 @@ double safe_get_double(const char * const var_name);
  *
  * @note Функция игнорирует все символы кроме y, Y, n, N и \n.
  */
-int is_user_want_continue(const char * const ask_message);
+int is_user_want_continue(const char * const fmt, ...) __attribute__ (( format (printf, 1, 2)));
 
 /**
  * @brief Определяет размер файла в байтах.
