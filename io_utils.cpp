@@ -239,7 +239,7 @@ ssize_t file_byte_size(const char * const filename) {
 }
 
 char * read_file_to_buf(const char * const filename, size_t * const buf_len) {
-    if (filename == NULL || buf_len == NULL) {
+    if (filename == NULL) {
         errno = EINVAL;
         return NULL;
     }
@@ -261,7 +261,7 @@ char * read_file_to_buf(const char * const filename, size_t * const buf_len) {
 }
 
 char * read_file_to_buf(FILE * file, size_t * const buf_len) {
-    if (file == NULL || buf_len == NULL) {
+    if (file == NULL) {
         errno = EINVAL;
         return NULL;
     }
@@ -309,7 +309,8 @@ char * read_file_to_buf(FILE * file, size_t * const buf_len) {
         }
 
         buf[remain] = '\0';
-        *buf_len = alloc_size;
+        if (buf_len)
+            *buf_len = alloc_size;
         return buf;
     }
 
