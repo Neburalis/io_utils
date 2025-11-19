@@ -13,6 +13,13 @@
 
 #include "io_utils.h"
 
+#define TYPED_CALLOC_(NMEMB, TYPE) \
+    (TYPE *) calloc((NMEMB), sizeof(TYPE));
+
+#define FREE_(ptr)     \
+    free((ptr));       \
+    (ptr) = nullptr;
+
 void show_gif(const char * const filename) {
     assert(filename != NULL && "U must pass filename");
 
@@ -232,71 +239,134 @@ ssize_t file_byte_size(const char * const filename) {
 }
 
 char * read_file_to_buf(const char * const filename, size_t * const buf_len) {
-    assert(filename != NULL && "You must provide a valid filename");
-    assert(buf_len != NULL  && "You must provide a valid pointer to buf_len");
-
-    if (filename == NULL) {
-        errno = EINVAL;
-        return NULL;
-    }
-    if (buf_len == NULL) {
+    if (filename == NULL || buf_len == NULL) {
         errno = EINVAL;
         return NULL;
     }
 
-    FILE * fp = fopen(filename, "rb");
+    FILE *fp = fopen(filename, "rb");
     if (!fp) {
-        // errno уже установлен fopen()
-        return NULL;
+        return NULL; /* errno set by fopen */
     }
 
-    ssize_t byte_len = file_byte_size(filename);
-    if (byte_len < 0) {
-        // Ошибка уже установлена в file_byte_size()
-        fclose(fp);
-        return NULL;
-    }
-    if (byte_len == 0) {
-        // Пустой файл — допустимый случай
-        fclose(fp);
-    }
+    /* Delegate to FILE* overload which handles regular and non-regular files */
+    char *res = read_file_to_buf(fp, buf_len);
 
-    // Проверка на переполнение: byte_len + 1 не должно превышать SIZE_MAX
-    if ((size_t)byte_len > SIZE_MAX - 1) {
-        fclose(fp);
-        errno = ENOMEM; // или EOVERFLOW, но ENOMEM уместнее при аллокации
-        return NULL;
-    }
-
-    size_t alloc_size = (size_t)byte_len + 1;
-
-    char * buf = (char *) calloc(alloc_size, sizeof(char));
-    if (buf == NULL) {
-        fclose(fp);
-        return NULL;
-    }
-
-    if (byte_len > 0) {
-        fread(buf, 1, (size_t)byte_len, fp);
-        if (ferror(fp)) {
-            free(buf);
-            fclose(fp);
-            return NULL;
-        }
-    }
-    // Для пустого файла nread остаётся 0 — это нормально
-
+    /* Close the FILE we opened regardless of success or failure */
+    int saved_errno = errno;
     fclose(fp);
+    errno = saved_errno;
 
-    // Убеждаемся, что буфер завершён нулём (calloc уже обнулил, но на всякий случай)
-    buf[byte_len] = '\0';
-
-    // Возвращаем **полный размер выделенного буфера**, включая '\0'
-    *buf_len = alloc_size;
-
-    return buf;
+    return res;
 }
 
+char * read_file_to_buf(FILE * file, size_t * const buf_len) {
+    if (file == NULL || buf_len == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    int fd = fileno(file);
+    if (fd == -1) {
+        errno = EBADF;
+        return NULL;
+    }
+
+    struct stat st = {};
+    if (fstat(fd, &st) == 0 && S_ISREG(st.st_mode)) {
+        /* Regular file: try to read remaining bytes from current position */
+        off_t file_size = st.st_size;
+        off_t cur = ftell(file);
+        if (cur == -1) {
+            /* cannot get current position, try to seek to start */
+            if (fseek(file, 0, SEEK_SET) != 0) {
+                return NULL;
+            }
+            cur = 0;
+        }
+
+        off_t remain = file_size - cur;
+        if (remain < 0) remain = 0;
+
+        /* Check for overflow when adding terminating NUL */
+        if ((unsigned long long)remain > (unsigned long long)SIZE_MAX - 1ULL) {
+            errno = ENOMEM;
+            return NULL;
+        }
+
+        size_t alloc_size = (size_t)remain + 1;
+        char *buf = TYPED_CALLOC_(alloc_size, char);
+        if (!buf) return NULL;
+
+        if (remain > 0) {
+            size_t nread = fread(buf, 1, (size_t)remain, file);
+            if (nread != (size_t)remain) {
+                int saved_errno = ferror(file) ? errno : EIO;
+                FREE_(buf);
+                errno = saved_errno;
+                return NULL;
+            }
+        }
+
+        buf[remain] = '\0';
+        *buf_len = alloc_size;
+        return buf;
+    }
+
+    /* Non-regular file (pipe, socket, tty, etc.) - read until EOF with growing buffer */
+    const size_t CHUNK = 4096;
+    size_t cap = CHUNK;
+    char *buf = TYPED_CALLOC_(cap, char);
+    if (!buf) return NULL;
+
+    size_t total = 0;
+    for (;;) {
+        if (total == cap) {
+            size_t new_cap = cap + CHUNK;
+            if (new_cap <= cap) { /* overflow */
+                FREE_(buf);
+                errno = ENOMEM;
+                return NULL;
+            }
+            char *p = (char *) realloc(buf, new_cap);
+            if (!p) {
+                FREE_(buf);
+                return NULL;
+            }
+            buf = p;
+            cap = new_cap;
+        }
+
+        size_t to_read = cap - total;
+        size_t n = fread(buf + total, 1, to_read, file);
+        if (n > 0) total += n;
+
+        if (n < to_read) {
+            if (feof(file)) break;
+            if (ferror(file)) {
+                int saved_errno = errno ? errno : EIO;
+                FREE_(buf);
+                errno = saved_errno;
+                return NULL;
+            }
+        }
+    }
+
+    /* ensure space for terminating NUL */
+    if (total == SIZE_MAX) {
+        FREE_(buf);
+        errno = ENOMEM;
+        return NULL;
+    }
+    char *p = (char *) realloc(buf, total + 1);
+    if (!p) {
+        FREE_(buf);
+        return NULL;
+    }
+    p[total] = '\0';
+    *buf_len = total + 1;
+    return p;
+}
 size_t * read_file_to_size_t_buf(const char *filename, size_t *count) {
     // Проверки аргументов
     if (filename == NULL || count == NULL) {
@@ -348,7 +418,7 @@ size_t * read_file_to_size_t_buf(const char *filename, size_t *count) {
     size_t nread = fread(buf, 1, total_bytes, fp);
     if (nread != total_bytes) {
         int saved_errno = ferror(fp) ? errno : EIO;
-        free(buf);
+        FREE_(buf);
         fclose(fp);
         errno = saved_errno;
         return NULL;
@@ -380,3 +450,6 @@ int create_folder_if_not_exists(const char *dir_path) {
         return 0;
     }
 }
+
+#undef TYPED_CALLOC_
+#undef FREE_
